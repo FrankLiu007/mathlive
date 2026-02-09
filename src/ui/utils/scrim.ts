@@ -151,8 +151,10 @@ export class Scrim {
     if (deepActiveElement() !== this.savedActiveElement)
       this.savedActiveElement?.focus?.();
 
-    // Remove all children
-    element.innerHTML = '';
+    // Remove all children (使用安全的 DOM 操作)
+    while (element.firstChild) {
+      element.removeChild(element.firstChild);
+    }
     this.state = 'closed';
   }
 

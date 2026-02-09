@@ -16,6 +16,13 @@ function getFileUrl() {
   // 0 = this getFileUrl frame (because the Error is created here)
   // 1 = the caller of getFileUrl (the file path we want to grab)
   let callerFrame = stackTraceFrames[1];
+  if (!callerFrame) {
+    console.error(
+      "Can't use relative paths to specify assets location because the source" +
+        'file location could not be determined (stack trace frame 1 is missing).'
+    );
+    return '';
+  }
 
   // Extract the script's complete url
   let m = callerFrame.match(/http.*\.ts[\?:]/);
@@ -23,6 +30,13 @@ function getFileUrl() {
     // This is a Typescript file, therefore there's a source map that's
     // remapping to the source file. Use an entry further in the stack trace.
     callerFrame = stackTraceFrames[2];
+    if (!callerFrame) {
+      console.error(
+        "Can't use relative paths to specify assets location because the source" +
+          'file location could not be determined (stack trace frame 2 is missing).'
+      );
+      return '';
+    }
   }
 
   m = callerFrame.match(/(https?:.*):[0-9]+:[0-9]+/);

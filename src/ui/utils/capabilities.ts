@@ -31,23 +31,30 @@ export function osPlatform():
   | 'other' {
   if (!isBrowser()) return 'other';
 
+  const userAgent = navigator.userAgent;
   const platform = navigator['userAgentData']?.platform ?? navigator.platform;
 
-  if (/^mac/i.test(platform)) {
-    // WebKit on iPad OS 14 looks like macOS.
-    // Use the number of touch points to distinguish between macOS and iPad OS
-    if (navigator.maxTouchPoints === 5) return 'ios';
+  // 如果 platform 存在，优先使用 platform 判断
+  if (platform) {
+    if (/^mac/i.test(platform)) {
+      // WebKit on iPad OS 14 looks like macOS.
+      // Use the number of touch points to distinguish between macOS and iPad OS
+      if (navigator.maxTouchPoints === 5) return 'ios';
 
-    return 'macos';
+      return 'macos';
+    }
+
+    if (/^win/i.test(platform)) return 'windows';
   }
 
-  if (/^win/i.test(platform)) return 'windows';
+  // 如果 platform 不存在或无法判断，使用 userAgent
+  if (!userAgent) return 'other';
 
-  if (/android/i.test(navigator.userAgent)) return 'android';
+  if (/android/i.test(userAgent)) return 'android';
 
-  if (/iphone|ipod|ipad/i.test(navigator.userAgent)) return 'ios';
+  if (/iphone|ipod|ipad/i.test(userAgent)) return 'ios';
 
-  if (/\bcros\b/i.test(navigator.userAgent)) return 'chromeos';
+  if (/\bcros\b/i.test(userAgent)) return 'chromeos';
 
   return 'other';
 }
@@ -55,16 +62,19 @@ export function osPlatform():
 export function supportRegexPropertyEscape(): boolean {
   if (!isBrowser()) return true;
 
-  if (/firefox/i.test(navigator.userAgent)) {
-    const m = navigator.userAgent.match(/firefox\/(\d+)/i);
+  const userAgent = navigator.userAgent;
+  if (!userAgent) return true; // 如果 userAgent 不存在，假设支持
+
+  if (/firefox/i.test(userAgent)) {
+    const m = userAgent.match(/firefox\/(\d+)/i);
     if (!m) return false;
     const version = parseInt(m[1]);
     return version >= 78; // https://www.mozilla.org/en-US/firefox/78.0/releasenotes/
   }
-  if (/trident/i.test(navigator.userAgent)) return false;
+  if (/trident/i.test(userAgent)) return false;
 
-  if (/edge/i.test(navigator.userAgent)) {
-    const m = navigator.userAgent.match(/edg\/(\d+)/i);
+  if (/edge/i.test(userAgent)) {
+    const m = userAgent.match(/edg\/(\d+)/i);
     if (!m) return false;
     const version = parseInt(m[1]);
     return version >= 79;

@@ -253,7 +253,13 @@ export class _MenuItemState<T> implements MenuItemState<T> {
 
     if (this.type === 'heading') span.classList.add('heading');
 
-    span.innerHTML = this.label;
+    // 检查 label 是否包含 HTML 标签（如数学公式的标记）
+    // 如果包含 HTML，使用 innerHTML 和 createHTML 来渲染；否则使用 textContent 保持安全性
+    if (this.label && /<[^>]+>/.test(this.label)) {
+      span.innerHTML = globalThis.MathfieldElement.createHTML(this.label);
+    } else {
+      span.textContent = this.label;
+    }
 
     li.append(span);
 
@@ -272,7 +278,8 @@ export class _MenuItemState<T> implements MenuItemState<T> {
 
     if (isCommand(this._declaration) && this._declaration.keyboardShortcut) {
       const kbd = document.createElement('kbd');
-      kbd.innerHTML = getKeybindingMarkup(this._declaration.keyboardShortcut);
+      // getKeybindingMarkup 返回 HTML 字符串，需要使用 createHTML
+      kbd.innerHTML = globalThis.MathfieldElement.createHTML(getKeybindingMarkup(this._declaration.keyboardShortcut));
       li.append(kbd);
     }
 

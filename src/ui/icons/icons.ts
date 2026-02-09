@@ -20,7 +20,8 @@ export function icon(name: string): Element | undefined {
 
     if (markup) {
       const template = document.createElement('template');
-      template.innerHTML = markup;
+      // 使用 createHTML 支持 Trusted Types
+      template.innerHTML = globalThis.MathfieldElement.createHTML(markup);
       ICON_CATALOG[name] = template;
       icon = template;
     }
@@ -30,7 +31,8 @@ export function icon(name: string): Element | undefined {
     if ('content' in icon)
       return (icon as HTMLTemplateElement).content.cloneNode(true) as Element;
     const element = document.createElement('svg');
-    element.innerHTML = icon.innerHTML;
+    // 使用 createHTML 支持 Trusted Types
+    element.innerHTML = globalThis.MathfieldElement.createHTML(icon.innerHTML);
     return element;
   }
 

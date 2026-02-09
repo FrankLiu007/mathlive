@@ -276,7 +276,10 @@ abstract class MathStaticElement extends HTMLElement {
       const content = this.textContent?.trim() ?? '';
 
       if (!content) {
-        this._renderContainer.innerHTML = '';
+        // 清空容器，使用 textContent 更安全
+        while (this._renderContainer.firstChild) {
+          this._renderContainer.removeChild(this._renderContainer.firstChild);
+        }
         this._errorFallback.style.display = 'none';
         this._renderContainer.style.display = 'none';
         this._removeMathML();
@@ -327,8 +330,8 @@ abstract class MathStaticElement extends HTMLElement {
       // Render the content
       const markup = convertLatexToMarkup(latex, options);
 
-      // Update the DOM
-      this._renderContainer.innerHTML = markup;
+      // Update the DOM (使用 createHTML 支持 Trusted Types)
+      this._renderContainer.innerHTML = globalThis.MathfieldElement.createHTML(markup);
       this._renderContainer.style.display = this.getDefaultDisplay();
       this._errorFallback.style.display = 'none';
 
@@ -404,7 +407,8 @@ abstract class MathStaticElement extends HTMLElement {
         this._shadowRoot.appendChild(this._mathMLContainer);
       }
 
-      this._mathMLContainer.innerHTML = mathML;
+      // 使用 createHTML 支持 Trusted Types
+      this._mathMLContainer.innerHTML = globalThis.MathfieldElement.createHTML(mathML);
     } catch (error) {
       console.warn('Could not generate MathML:', error);
     }

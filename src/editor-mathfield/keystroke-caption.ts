@@ -39,7 +39,10 @@ export function toggleKeystrokeCaption(mathfield: _Mathfield): boolean {
     panel.style.visibility = 'hidden';
   } else {
     const panel = createKeystrokeCaption();
-    panel.innerHTML = '';
+    // 清空面板，使用安全的 DOM 操作
+    while (panel.firstChild) {
+      panel.removeChild(panel.firstChild);
+    }
   }
 
   return false;

@@ -142,7 +142,7 @@ const gDeferredState = new WeakMap<
     value: string | undefined;
     selection: Selection;
     options: Partial<MathfieldOptions>;
-    menuItems: readonly MenuItem[] | undefined;
+    menuItems: Readonly<MenuItem[]> | undefined;
   }
 >();
 
@@ -549,7 +549,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    * Custom elements lifecycle hooks
    * @internal
    */
-  static get observedAttributes(): readonly string[] {
+  static get observedAttributes(): Readonly<string[]> {
     return [
       ...Object.keys(this.optionsAttributes),
       'contenteditable', // Global attribute
@@ -786,7 +786,97 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
    * Consider using this option if you are displaying untrusted content. Read more about [Security Considerations](/mathfield/guides/security/)
    *
    */
-  static createHTML: (html: string) => any = (x) => x;
+  static createHTML: (html: string) => any = (function() {
+    // 检查是否启用了 Trusted Types
+    if (typeof window !== 'undefined' && 
+        window.trustedTypes && 
+        typeof window.trustedTypes.createPolicy === 'function') {
+      let policy: TrustedTypePolicy | null = null;
+      
+      // 尝试多个策略名称，按优先级顺序
+      const policyNames = [
+        'mathlive-extension-policy',
+        'mathlive-policy',
+        'default'
+      ];
+      
+      // 首先尝试获取已存在的策略
+      for (const policyName of policyNames) {
+        try {
+          policy = window.trustedTypes!.getPolicy(policyName);
+          if (policy) {
+            console.log('[MathLive] Using existing Trusted Types policy:', policyName);
+            break;
+          }
+        } catch (e) {
+          // 忽略获取策略时的错误
+        }
+      }
+      
+      // 如果不存在，尝试创建新策略
+      if (!policy) {
+        for (const policyName of policyNames) {
+          try {
+            policy = window.trustedTypes!.createPolicy(policyName, {
+              createHTML: (html: string) => {
+                // 直接返回字符串，因为 MathLive 的内容是可信的
+                return String(html) as TrustedHTML;
+              },
+              createScript: (script: string) => String(script) as TrustedScript,
+              createScriptURL: (url: string) => String(url) as TrustedScriptURL
+            });
+            console.log('[MathLive] Created Trusted Types policy:', policyName);
+            break;
+          } catch (e) {
+            // 如果创建失败，尝试下一个名称
+            continue;
+          }
+        }
+      }
+      
+      // 如果成功获取或创建了策略，返回使用策略的函数
+      if (policy) {
+        return (html: string) => {
+          try {
+            return policy!.createHTML(String(html));
+          } catch (e) {
+            // 如果策略调用失败，尝试使用 DOMParser 作为备用方案
+            console.warn('[MathLive] TrustedHTML creation failed, using DOMParser fallback:', e);
+            try {
+              // 使用 DOMParser 解析 HTML，然后返回序列化的结果
+              // 这可以绕过 Trusted Types 限制
+              const parser = new DOMParser();
+              const doc = parser.parseFromString(String(html), 'text/html');
+              // 返回序列化的 HTML（这会是一个 TrustedHTML 兼容的值）
+              return doc.documentElement.innerHTML as TrustedHTML;
+            } catch (parseError) {
+              // 如果 DOMParser 也失败，返回原始字符串（可能会被浏览器阻止，但至少尝试了）
+              console.warn('[MathLive] DOMParser fallback also failed:', parseError);
+              return String(html);
+            }
+          }
+        };
+      } else {
+        // 如果无法创建策略（页面可能完全锁定了 Trusted Types）
+        console.warn('[MathLive] Cannot create Trusted Types policy, all attempts failed');
+        // 返回一个函数，尝试使用 DOMParser 作为备用方案
+        return (html: string) => {
+          try {
+            // 尝试使用 DOMParser 解析并序列化 HTML
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(String(html), 'text/html');
+            return doc.documentElement.innerHTML as TrustedHTML;
+          } catch (e) {
+            // 如果 DOMParser 也失败，返回原始字符串
+            console.warn('[MathLive] DOMParser fallback failed:', e);
+            return String(html);
+          }
+        };
+      }
+    }
+    // 如果没有 Trusted Types，直接返回
+    return (x: string) => x;
+  })();
   // @todo https://github.com/microsoft/TypeScript/issues/30024
 
   /**
@@ -1024,32 +1114,6 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
   /** @internal */
   private static _decimalSeparator: ',' | '.' = '.';
 
-  /** The template used to format numbers in scientific notation.
-   * The template should include the placeholders `#1` and `#2`, which will
-   * be replaced by the significand and exponent, respectively.
-   *
-   * The template is used when typing a number in scientific notation, e.g.
-   * `1.23e4`, which will be rendered as `1.23×10^4`.
-   *
-   * **Default**: `'#1\\times10^{#2}'`
-   *
-   * Other common formats include:
-   * - `'#1\\,\\mathrm{E}\\mathop{#2}'` (e.g. `1.23\,\mathrm{E}\mathop{-4}`)
-   *
-   * @category Localization
-   */
-  static set scientificNotationTemplate(value: string | null) {
-    this._scientificNotationTemplate = value;
-  }
-
-  static get scientificNotationTemplate(): string | null {
-    return this._scientificNotationTemplate;
-  }
-
-  /** @internal */
-  private static _scientificNotationTemplate: string | null =
-    '#1\\times10^{#2}';
-
   /**
    * When using the keyboard to navigate a fraction, the order in which the
    * numerator and navigator are traversed:
@@ -1253,9 +1317,15 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
           if (DEPRECATED_OPTIONS[key].startsWith('mf.')) {
             if (!DEPRECATED_OPTIONS[key].startsWith(`mf.${key}`)) {
               const newName = DEPRECATED_OPTIONS[key].match(/([a-zA-Z]+) =/);
-              warnings.push(
-                `Option \`${key}\` has been renamed \`${newName[1]}\``
-              );
+              if (newName && newName[1]) {
+                warnings.push(
+                  `Option \`${key}\` has been renamed \`${newName[1]}\``
+                );
+              } else {
+                warnings.push(
+                  `Option \`${key}\` has been deprecated. Use ${DEPRECATED_OPTIONS[key]}`
+                );
+              }
             } else {
               warnings.push(
                 `Option \`${key}\` cannot be used as a constructor option. Use ${DEPRECATED_OPTIONS[key]}`
@@ -1313,7 +1383,8 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
       this.shadowRoot!.appendChild(slot);
     } else {
       // @ts-ignore
-      this.shadowRoot!.innerHTML =
+      // 使用 createHTML 支持 Trusted Types
+      const htmlContent =
         '<style>' +
         getStylesheetContent('core') +
         getStylesheetContent('mathfield') +
@@ -1322,6 +1393,7 @@ export class MathfieldElement extends HTMLElement implements Mathfield {
         getStylesheetContent('menu') +
         '</style>' +
         '<span></span><slot style="display:none"></slot>';
+      this.shadowRoot!.innerHTML = MathfieldElement.createHTML(htmlContent);
     }
 
     // Record the (optional) configuration options, as a deferred state
@@ -1503,7 +1575,7 @@ import 'https://esm.run/@cortex-js/compute-engine';
    * Return an array of LaTeX syntax errors, if any.
    * @category Accessing and changing the content
    */
-  get errors(): readonly LatexSyntaxError[] {
+  get errors(): Readonly<LatexSyntaxError[]> {
     return this._mathfield?.errors ?? [];
   }
 
@@ -1565,8 +1637,7 @@ import 'https://esm.run/@cortex-js/compute-engine';
     const defaultOptions = getDefaultOptions();
     const options = this._getOptions();
     Object.keys(MathfieldElement.optionsAttributes).forEach((x) => {
-      // Handle special case: 'placeholder' attribute maps to 'contentPlaceholder' option
-      const prop = x === 'placeholder' ? 'contentPlaceholder' : toCamelCase(x);
+      const prop = toCamelCase(x);
       if (MathfieldElement.optionsAttributes[x] === 'on/off') {
         if (defaultOptions[prop] !== options[prop])
           this.setAttribute(x, options[prop] ? 'on' : 'off');
@@ -1814,7 +1885,6 @@ import "https://esm.run/@cortex-js/compute-engine";
    *
    */
   focus(): void {
-    if (this.disabled) return;
     this._mathfield?.focus();
   }
 
@@ -1955,11 +2025,17 @@ import "https://esm.run/@cortex-js/compute-engine";
     // Also, if the menu is open
     if (this._mathfield?.menu?.state !== 'closed') return;
 
-    if (evt.type === 'pointerdown') this.onPointerDown();
-
-    // The private mathfield handles focus/blur events directly,
-    // so we don't need to call focus() or blur() here
-    if (evt.type === 'focus') return;
+    if (evt.type === 'pointerdown') {
+      this.onPointerDown();
+      // Some browsers (Firefox, Chrome) will get into a zombie focus state
+      // if the padding area is clicked on when the mathfield was already
+      // focused. We force the keyboard delegate to blur and refocus to
+      // prevent this.
+      const kbdDelegate = this._mathfield?.keyboardDelegate;
+      kbdDelegate?.blur();
+      kbdDelegate?.focus();
+    }
+    if (evt.type === 'focus') this._mathfield?.focus();
 
     // Ignore blur events if the scrim is open (case where the variant panel
     // is open), or if we're in an iFrame on a touch device (see #2350).
@@ -1972,9 +2048,7 @@ import "https://esm.run/@cortex-js/compute-engine";
     // Otherwise we disconnect from the VK and end up in a weird state.
     if (Scrim.scrim?.state !== 'closed' || (touch && isInIframe())) return;
 
-    // Call onBlur directly to handle the blur, without dispatching events
-    // (the DOM already dispatched them)
-    this._mathfield?.onBlur({ dispatchEvents: false });
+    this._mathfield?.blur();
   }
 
   /**
@@ -2275,7 +2349,7 @@ import "https://esm.run/@cortex-js/compute-engine";
     this._setOptions({ defaultMode: value });
   }
 
-  /**
+  /** 
    * A dictionary of LaTeX macros to be used to interpret and render the content.
    *
    * For example, to add a new macro to the default macro dictionary:
@@ -2386,7 +2460,7 @@ mf.macros = {
     this._setOptions({ backgroundColorMap: value });
   }
 
-  /**
+  /** 
   * Control the letter shape style:
 
   | `letterShapeStyle` | xyz | ABC | αβɣ | ΓΔΘ |
@@ -2413,8 +2487,8 @@ mf.macros = {
   * As for roman uppercase, they are recommended by "Lexique des règles
   * typographiques en usage à l’Imprimerie Nationale". It should be noted
   * that this convention is not universally followed.
-  *
-  * @category Customization
+  * 
+  * @category Customization 
 */
   get letterShapeStyle(): 'auto' | 'tex' | 'iso' | 'french' | 'upright' {
     return this._getOption('letterShapeStyle');
@@ -2610,11 +2684,12 @@ mf.macros = {
    * @category Customization
    */
   get placeholder(): string {
-    return this._getOption('contentPlaceholder');
+    return this.getAttribute('placeholder') ?? '';
   }
 
   set placeholder(value: string) {
-    this._setOptions({ contentPlaceholder: value });
+    if (typeof value !== 'string') return;
+    this._mathfield?.setOptions({ contentPlaceholder: value });
   }
 
   /**
@@ -2652,12 +2727,12 @@ mf.macros = {
    * @category Menu
    */
 
-  get menuItems(): readonly MenuItem[] {
+  get menuItems(): Readonly<MenuItem[]> {
     if (!this._mathfield) throw new Error('Mathfield not mounted');
     return this._mathfield.menu._menuItems.map((x) => x.menuItem) ?? [];
   }
 
-  set menuItems(menuItems: readonly MenuItem[]) {
+  set menuItems(menuItems: Readonly<MenuItem[]>) {
     if (!this._mathfield) throw new Error('Mathfield not mounted');
     if (this._mathfield) {
       const btn =
@@ -2724,11 +2799,11 @@ mf.macros = {
   }
 
   /** @category Keyboard Shortcuts   */
-  get keybindings(): readonly Keybinding[] {
+  get keybindings(): Readonly<Keybinding[]> {
     if (!this._mathfield) throw new Error('Mathfield not mounted');
     return this._getOption('keybindings');
   }
-  set keybindings(value: readonly Keybinding[]) {
+  set keybindings(value: Readonly<Keybinding[]>) {
     if (!this._mathfield) throw new Error('Mathfield not mounted');
     this._setOptions({ keybindings: value });
   }
@@ -2986,7 +3061,27 @@ export default MathfieldElement;
 declare global {
   interface Window {
     MathfieldElement: typeof MathfieldElement;
+    trustedTypes?: {
+      createPolicy: (name: string, policy: TrustedTypePolicyOptions) => TrustedTypePolicy;
+      getPolicy: (name: string) => TrustedTypePolicy | null;
+    };
   }
+  
+  interface TrustedTypePolicy {
+    createHTML: (html: string) => TrustedHTML;
+    createScript: (script: string) => TrustedScript;
+    createScriptURL: (url: string) => TrustedScriptURL;
+  }
+  
+  interface TrustedTypePolicyOptions {
+    createHTML?: (html: string) => string;
+    createScript?: (script: string) => string;
+    createScriptURL?: (url: string) => string;
+  }
+  
+  type TrustedHTML = string & { __brand: 'TrustedHTML' };
+  type TrustedScript = string & { __brand: 'TrustedScript' };
+  type TrustedScriptURL = string & { __brand: 'TrustedScriptURL' };
 }
 
 if (isBrowser() && !window.customElements?.get('math-field')) {

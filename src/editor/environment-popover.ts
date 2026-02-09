@@ -215,7 +215,10 @@ export function showEnvironmentPopover(mf: _Mathfield): void {
   if (possiblyExistentFlexbox) flexbox = possiblyExistentFlexbox;
   else {
     flexbox = document.createElement('div');
-    panel.innerHTML = '';
+    // 清空 panel，使用安全的 DOM 操作
+    while (panel.firstChild) {
+      panel.removeChild(panel.firstChild);
+    }
     panel.appendChild(flexbox);
   }
   flexbox.className = 'MLEP__environment-controls';
@@ -224,7 +227,8 @@ export function showEnvironmentPopover(mf: _Mathfield): void {
   flexbox.style.height = '100%';
   flexbox.style.boxSizing = 'border-box';
 
-  flexbox.innerHTML = controllerSvg;
+  // 使用 createHTML 支持 Trusted Types
+  flexbox.innerHTML = globalThis.MathfieldElement.createHTML(controllerSvg);
 
   let delimiterOptions: string[] = [];
   let activeDelimeter = '';
@@ -258,11 +262,12 @@ export function showEnvironmentPopover(mf: _Mathfield): void {
   delimiterControls.style.display = 'flex';
   delimiterControls.style.flexDirection = 'column';
 
-  delimiterControls.innerHTML = `
+  // 使用 createHTML 支持 Trusted Types
+  delimiterControls.innerHTML = globalThis.MathfieldElement.createHTML(`
   <div class='MLEP__array-delimiter-options'>
   ${activeDelimeter}
   ${delimiterOptions.join('')}
-  </div>`;
+  </div>`);
 
   // If we're in cases or matrix, show the delimiter controls
   if (activeDelimeter) flexbox.appendChild(delimiterControls);
